@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset='utf-8'>
+    <script src='https://www.w3.org/Tools/respec/respec-w3c' async class='remove'></script>
+    <script class='remove'>
+      // All config options at https://respec.org/docs/
+      var respecConfig = {
+        // Working Groups ids at https://respec.org/w3c/groups/
+        group: "webapps", 
+        specStatus: "unofficial",
+        editors: [{
+          name: "Rui Zhao",
+          url: "https://me.ryey.icu/",
+        },{
+          name: "Naman Goel",
+          url: "https://goelnaman.github.io/",
+        },
+        ],
+        github: {
+          branch: "master",
+          repoURL: "https://github.com/OxfordHCC/libertas", 
+        },
+        // See https://respec.org/docs/#xref for usage.
+        xref: "web-platform",
+        format: "markdown",
+        localBiblio: {
+          WAC: {
+            title: "Web Access Control",
+            href: "https://solid.github.io/web-access-control-spec/",
+            status: "ED",
+            publisher: "Solid Community Group",
+          },
+          WebID: {
+            title: "Solid WebID Profile",
+            href: "https://solid.github.io/webid-profile/",
+            status: "ED",
+            publisher: "Solid Community Group",
+          },
+          HTTP: {
+            title: "RDF 9110 HTTP Semantics",
+            href: "https://www.rfc-editor.org/rfc/rfc9110.html",
+            status: "LS",
+            publisher: "Internet Engineering Task Force (IETF)",
+          },
+          Turtle: {
+            title: "RDF 1.1 Turtle",
+            href: "https://www.w3.org/TR/turtle/",
+            status: "REC",
+            publisher: "W3C",
+          },
+          "Solid-Protocol:Description-Resource": {
+            title: "Solid Protocol -- Description Resource",
+            href: "https://solidproject.org/TR/protocol#auxiliary-resources-description-resource",
+            status: "ED",
+            publisher: "Solid Community Group",
+          },
+        },
+      };
+    </script>
+  </head>
+  <body>
+
+<h1 id="title">Libertas spec</h1>
+
+<section id='abstract'>
+
+This document describes the design specifications of Libertas, a user-autonomy-respecting privacy-preserving collective computation framework for SoLiD (Social Linked Data). It includes the details on preferences document, and the communication payloads between MPC App and encryption and computation agents.
+
+</section>
+
+<section id='sotd'>
+
+This document is work-in-progress. It reflects the specification corresponding to the submitted paper, which is fixed.
+
+</section>
+
+<section class="informative">
+
+## Stakeholders and their roles
+
+Collevtive computation means to perform some computation based on data from a lot of users (data providers). There are a few key stakeholders in Libertas to support user autonomy while protecting privacy for collective comptuation, who are distributed in the following roles:
+
+- Data Provider: The persons (each owning a Pod) aiming to contribute data to the computation;
+- Computation Requestor: The person who uses an application (the MPC App) to initiate the computation;
+- Service Provider:
+  - Encryption Agent: The agent(s) that perform secret-sharing of data (from Pod to computation agents);
+  - Computation Agent: The agent(s) that perform main MPC computation.
+
+In principle, each person will belong to one of these roles, and need to perform relevant initialization actions before computation can be performed.
+
+All stakeholders MUST be identified by [[WebID]], if identity is needed.
+
+</section>
+
+## Initialization actions for Data Provider
+
+A Data Provider SHOULD to set up permissions and MUST express their trusts to the relevant agents.
+
+Permission MUST be configured by utilizing Solid's authorization mechanism. At the time of writing, it is [[WAC]].
+
+Specifically, the relevant permissions are: Encryption Agent SHOULD be granted read permission to the data resource; Computation Requestor SHOULD be granted read permission to the Preference Specification ([[[#preference-specification]]]).
+
+To express their trusts, the Data Provider MUST create an <abbr title="Resource Description Framework">RDF</abbr> ([[RDF11-CONCEPTS]]) document for expressing the preference, according to the specification in [[[#preference-specification]]].
+
+## MPC App Behaviour
+
+The MPC App MAY be implemented in any language, deployed anywhere. It SHOULD authenticate as a WebID when interacting with the Solid Pods.
+
+In each computation, the MPC App MUST have the following parameters and specifications fixed:
+
+- The collection of Data Providers
+  - The location of their individual data
+  - The location of their Preference Document
+- The *selection algorithm* to choose Computation Agents
+- The number of Computation Agents involved in MPC
+- The MPC protocol used during this computation
+- The task for the Encryption Agents to execute
+  - Including additional parameters
+- The task for the Computation Agents to execute
+  - Including additional parameters
+
+> See [[[#reference-app]]] for additional notes on how the prototype implementation obtaines the relevant information.
+
+In the beginning of the computation, the MPC App MUST retrieve the Preference Documents from each individual Data Provider. For each Data Provider, the MPC App MUST choose one Encryption Agents from those specified in the Preference Document. It MUST also choose the required number of Computation Agents from the collection of all Computation Agents specified in the Preference Documents of all Data Providers, according to the *selection algorithm* (see [[[#computation-agent-selection-algorithm]]]). A Computation Agent MUST NOT appear more than once in the chosen collection.
+
+Then, the MPC App MUST provision the MPC executors from the Computation Agents by sending a `PUT` request to its `/allocate_player` endpoint. It MUST retrieve the response, which is a JSON serialization as specified in [[[#app-and-ca]]], and record the corresponding *player id* and *port* number. Further communications to the Computation Agent about that specific MPC executor will need the *player id* as the identifier; the MPC executor is located under the same host as the Computation Agent, over the *port*.
+
+The MPC App MUST wait for all provisioning finished, at which time it will have the collection of all player's addresses. Then the MPC App MUST send the computation jobs for the provisioned MPC executors, by sending a PUT request to `/player` containing a JSON message according to [[[#app-and-ca]]].
+
+The MPC App MUST also initiate the jobs for the Encryption Agents, after the provisioning of MPC executors. It MUST send a `PUT` request to the Encryption Agent's `/client` containing a JSON message according to [[[#app-and-ea]]]. It MUST record the responses, which contains the *client id*.
+
+The MPC App MUST then wait for the computation to finish, by periodically performing a `GET` request to `/client/CLIENT_ID` where `CLIENT_ID` is the *client id* obtained previously. It MUST perform this for the first client, and parse the response, which contains the computation result as plain text. It MUST NOT overflow the services by this action. It MAY wait for all clients to finish.
+
+## Computation Agent Service Behaviour
+
+The Computation Agent Service MUST provide a working environment for MP-SPDZ, and MUST have compiled the necessary protocols by the time of execution.
+It MAY perform just-in-time compilation of the requested protocol.
+
+The Computation Agent Service MUST provide a RESTful API for the MPC App to interact with. It MUST provide the following endpoints:
+
+- `/allocate_player`:
+  `PUT`: Provision an MPC player
+- `/player`:
+  `PUT`: Send the computation task to an MPC player
+
+Refer to [[[#app-and-ca]]] for the details of the messages.
+
+If SSL/TLS is used, the Computation Agent Service MUST have a valid SSL/TLS certificate, and MUST have the public key of the other Computation Agent Services and the Encryption Agent Services.
+
+The server running the Computation Agent Service SHOULD be able to handle multiple requests concurrently.
+
+## Encryption Agent Service Behaviour
+
+The Encryption Agent Service MUST provide a working environment for MP-SPDZ, particularly that for running *clients* (`ExternalIO`).
+
+It MUST provide a RESTful API for the MPC App to interact with. It MUST provide the following endpoints:
+
+- `/client`:
+  `PUT`: Start an MPC client task
+- `/client/CLIENT_ID`:
+  `GET`: Poll the status and output data of an MPC client task
+
+Refer to [[[#app-and-ea]]] for the details of the messages.
+
+If SSL/TLS is used, the Encryption Agent Service MUST have a valid SSL/TLS certificate, and MUST have the public key of the Computation Agent Services.
+
+The server running the Encryption Agent Service SHOULD be able to handle multiple requests concurrently.
+
+## Interaction between MPC App and Computation Agent {#app-and-ca}
+
+The messages between the MPC App and the Computation Agent MUST confront to the [[HTTP]] protocol.
+
+### Provision MPC player
+
+To provision an MPC player, the MPC App MUST send a `PUT` request to the Computation Agent Service, to the `/allocate_player` endpoint.
+
+The Computation Agent Service MUST privision the MPC player, and reply with the following information in JSON:
+
+- `player_place_id`: The (unique internal) ID of the provisioned MPC player
+- `port`: The port of the provisioned MPC player
+
+
+### Start MPC task
+
+The MPC App MUST send a `PUT` request to the Computation Agent Service, to the `/player` endpoint, with the following information in JSON:
+
+- `computation_id`: The ID of the current computation
+- `player_id`: The index of the current player
+- `protocol`: The MPC protocol to be used during the computation
+- `num_client`: The number of Encryption Agents
+- `player_code`: The MPC code used during computation
+- `player_servers`: The list of addresses of all MPC players
+- `player_place_id`: The (unique internal) ID of the provisioned MPC player
+- `data_size`: The size of data (number of integers or equivalent) that each Encryption Agent will send
+- `extra_args`: Additional arguments to run the MPC computation / circuit
+
+If the information is correct, the Computation Agent Service MUST reply after the MPC player has been started. It MAY include additional data in the reply, subject to application needs.
+If the information is incorrect, the Computation Agent Service MAY refuse to reply, or send HTTP Status Code 400.
+
+## Interaction between MPC App and Encryption Agent {#app-and-ea}
+
+The messages between the MPC App and the Encryption Agent MUST be in HTTP protocol.
+
+### Basic flow {#app-and-ea-basic-flow}
+
+#### Start MPC client task
+
+The MPC App MUST send a `PUT` request to the Encryption Agent's `/client` endpoint, with the following content encoded in JSON:
+
+- `computation_id`: The ID of the current computation
+- `client_id`: The index of the Encryption Agent
+- `data_uri`: The URI to the data
+- `client_code`: The MPC client code that this Encryption Agent should execute
+- `player_servers`: The list of addresses of all MPC players
+- `data_size`: The size of data
+- `extra_args`: Additional arguments to execute the client code
+
+The Encryption Agent Service MUST respond immediately after starting the job. The body of the reply MUST be text whose first line is the unique internal ID of the Encryption Agent. This ID MAY be represented as a quoted string using the double-quote character `"`.
+
+#### Wait for finishing and output data
+
+To poll the status and output data, the MPC App MUST send a `GET` request to the Encryption Agent Service `/client/CLIENT_ID` where `CLIENT_ID` is the internal ID of the Encryption Agent.
+
+If `CLIENT_ID` does not exist, the Encryption Agent MAY refuse to reply, or reply with HTTP status code 400.
+
+If `CLIENT_ID` exists, the Encryption Agent Service SHOULD reply according to the condition:
+
+- If the job is not finished, response SHOULD be of HTTP status code 520
+- If the job is finished, response body SHOULD contain either:
+  - The text result of the compuation
+  - A JSON object with `return_code` (return code of the job) and `output` (output of the job)
+
+In all cases, the Encryption Agent MAY reject to reply if identified the request to be malicious.
+
+### App Verification {#app-verification}
+
+If the Encryption Agent Service is an independent service on the Internet, it is not essential to perform App verification. The rationale being that it is of very low probability for a malicious App to correctly guess the combination of data provider's data location and a trusted Encryption Agent Service.
+
+However, if the Encryption Agent Service is deployed adjuscent to the Solid Pod, the Encryption Agent Service SHOULD verify the App (or the App User) is trusted.
+
+To accomplish this, the Encryption Agent Service MUST verify that the App is able to access a secure file in the user's Pod.
+
+This requires changes to the [[[#app-and-ea-basic-flow]]] flow described above, by adding a verification step and further proof of identity of MPC App. The procedure is as follows:
+
+1. When selecting the Encryption Agent, the MPC App MUST also obtain the data provider's ID corresponding to the Encryption Agent
+2. The MPC App sends a `PUT` request to the `/client` endpoint of Encryption Agent Service, with the following additions:
+  2.1. The request MUST have an additional field `data_provider_id` with the value obtained in the previous step
+  2.2. The request SHOULD have the corresponding `Authorization` and `DPoP` headers compliant with Solid-OIDC, using the `/client` endpoint as the resource
+3. The Encryption Agent Service verifies the MPC App is allowed to perform the comptuation, by performing the following:
+  3.1. Retrieve the trusted actors list from Data Provider's Pod (see separated description below)
+  3.2. Attest the WebID of the request, by verifying the `Authorization` and `DPoP` headers, compliant with Solid-OIDC
+  3.3. Verify the WebID is within the trusted actors list
+4. If the verification is successful, the Encryption Agent Service proceeds with the original procedure as described in [[[#app-and-ea-basic-flow]]]
+
+For Step 3.1, the trusted actor list is described in the *Description Resource* ([[Solid-Protocol:Description-Resource]]) of the requested resource (`data_uri`), using the `:trusted_actor_list` predicate. Elements are referenced using the `:trusted_actor` predicate.
+
+<aside class="example" data-include="sec/ex-app-verify.md" data-include-format="markdown"></aside>
+
+
+## Computation Agent Selection Algorithm
+
+The selection algorithm is used to choose a required amount (`N`) of unique Computation Agents from the trusted Computation Agents across Preference Documents from all Data Providers.
+
+The output MUST be a list of unique `N` Computation Agents. The Computation Agents in the list MUST be in the collection of all trusted Computation Agents.
+
+<aside class="example">
+
+We provide two examples in our implementation: set intersection and union. They treat the trusted Computation Agents of each Data Provider as a set.
+
+</aside>
+
+
+## Preference specification
+
+The Preference Specification MUST be an RDF document. It MUST contain a subject with the following predicates:
+
+- `urn:solid:mpc#trustedEncryptionServer`
+- `urn:solid:mpc#trustedComputationServer`
+
+The document SHOULD contain only one subject with the aforementioned predicates. The behaviour is undefined if multiple subjects contains the specification.
+
+Each object of the predicate MUST contain one predicate of `schema:url` which has one string object denoting the URL to the endpoint of the relevant (Encryption and Computation) Agents.
+
+<aside class="example" data-include="sec/ex-pref.md" data-include-format="markdown">
+</aside>
+
+
+<section class="informative">
+
+## Additional notes for prototype implementation {#reference-implementation}
+
+### Notes for MPC App {#reference-app}
+
+The [prototype MPC App](https://github.com/OxfordHCC/solid-mpc-app) provides a sample implementation of using Libertas to perform MPC computation with plenty of options.
+
+It allows the user to change all parameters. It uses the Resource Description document to describe the resources (data and preferences).
+
+#### Resource Description
+
+The Resuouce Description is a Turtle document containing a subject of type `:MPCSourceSpec`, whose objects of predicate `:source` are each individual resource information of a Data Provider. The object is a `:MPCSource`; the object of `:pref` is the URL to the Preference Document; the object of `:data` is the URL to the data.
+
+<aside class="example" title="Example Resource Description Template" data-include="sec/ex-res-desc.md" data-include-format="markdown">
+</aside>
+
+### Notes for agent services {#reference-services}
+
+The [prototype agent services](https://github.com/OxfordHCC/solid-mpc) are implemented in Python, using the Flask framework. The prototype Computation Agent Service also contains a nodejs component, which is called by the Python part, for the ease of implementation. They should be initialized accordingly as per their README.
+
+</section>
+
+<section id='conformance'>
+  <!-- This section is filled automatically by ReSpec. -->
+</section>
+
+  </body>
+</html>
