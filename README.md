@@ -11,6 +11,7 @@ This repo is the indexer repository for our prototype implementation. The implem
 
 - [MPC App](https://github.com/OxfordHCC/solid-mpc-app): This repository contains the source code for the example MPC App for performing MPC in Libertas
 - [Agent services](https://github.com/OxfordHCC/solid-mpc): This repository contains the source code for agent services (for encryption agent and computation agent)
+- [Specification](./spec/index.html): The specification (using ReSpec) of Libertas, containing details of the protocol and interactions
 
 Please refer to the README in each repository for further details.
 
