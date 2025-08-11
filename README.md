@@ -20,6 +20,13 @@ Please refer to the README in each repository for further details.
 
 
 ## Citing this work
+
+This paper has been accepted by ACM CSCW conference 2025, which will be held in November 2025. You can cite this work like this:
+
+> Rui Zhao, Naman Goel, Nitin Agrawal, Jun Zhao, Jake Stein, Wael S Albayaydh, Ruben Verborgh, Reuben Binns, Tim Berners-Lee, and Nigel Shadbolt. 2025. Libertas: Privacy-Preserving Collaborative Computation for Decentralised Personal Data Stores. Proc. ACM Hum.-Comput. Interact. 9, 7, Article 309 (November 2025), 30 pages. https://doi.org/10.1145/3757490
+
+Alternatively, you can also cite the arxiv version for the time being:
+
 ```
 @misc{zhao2023libertas,
       title={Libertas: Privacy-Preserving Computation for Decentralised Personal Data Stores}, 
